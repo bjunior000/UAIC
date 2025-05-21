@@ -2,7 +2,7 @@ import json
 import torch 
 import os 
 
-from transformers import BertTokenizer, BertForMaskedLM, AdamW 
+from transformers import BertTokenizer, BertForMaskedLM
 from model import UAIC 
 from dataset import UAICDataset 
 
@@ -25,7 +25,7 @@ def train():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     model = model.to(device) 
-    optimizer = AdamW(model.parameters(), lr=lr)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=lr)
 
     model.train()
     

@@ -1,6 +1,7 @@
-from transformers import BertTokenizer, BertConfig, BertModel, BertPreTrainedModel
-# AdamW는 더 이상 transformers에서 직접 import할 수 없음
-from torch.optim import AdamW
+# CLIP 없이 사용할 수 있는 BOW 구현
+from transformers import BertTokenizer, BertConfig, BertModel, BertPreTrainedModel 
+# 더 이상 transformers에서 직접 import할 수 없음
+from torch.optim import AdamW  
 import torch.nn as nn
 import torch 
 from dataset import BagWordsDataset 
@@ -32,7 +33,6 @@ class BagofWords(BertPreTrainedModel):
     
     def forward(self, img_embs, labels=None):
         img_embs = self.feature_embd(img_embs)
-        # print(img_embs.size())
         transformer_outputs = self.transformer(inputs_embeds=img_embs)
         hidden_states = transformer_outputs[1]
         pool_outputs = self.dropout(hidden_states)
@@ -50,7 +50,7 @@ class BagofWords(BertPreTrainedModel):
 
 # train the image conditioned bag-of-words 
 def train():
-
+    print("CLIP 없이 BOW 모델 학습을 시작합니다...")
     epochs = 25 
     model_path = 'model'
     gradient_accumlation_steps = 5 
@@ -75,7 +75,6 @@ def train():
             return
 
     tokenizer = BertTokenizer(vocab_path) 
-    # print(tokenizer.vocab.get('[UNK]'))
     
     # [UNK] 토큰 처리
     unk_id = tokenizer.vocab.get('[UNK]')
@@ -83,16 +82,15 @@ def train():
         print("Warning: [UNK] token not found in vocabulary, using default value.")
         unk_id = 10876  # README에서 확인된 값
         
-    configuration = BertConfig(vocab_size=unk_id + 1, \
-                                num_hidden_layers=3, \
+    configuration = BertConfig(vocab_size=unk_id + 1, 
+                                num_hidden_layers=3, 
                                 intermediate_size=2048)
     model = BagofWords(configuration)
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = model.to(device)
     optimizer = AdamW(model.parameters(), lr=1e-4)
 
-    dataset =  BagWordsDataset('data', tokenizer)
-    # train_loader = torch.utils.data.DataLoader(dataset, batch_size=1, shuffle=True)
+    dataset = BagWordsDataset('data', tokenizer)
 
     model.train()
     loss_list = []
@@ -102,8 +100,6 @@ def train():
         avg_acc = AverageMeter()
         iteration = 1 
         for img, label in dataset:
-            #print(img.size())
-            #print(label.size())
             img = img.unsqueeze(0).to(device)
             label = label.unsqueeze(0).to(device)
             loss, acc = model(img, label)
@@ -117,12 +113,11 @@ def train():
                 avg_loss.update(loss.item() / gradient_accumlation_steps)
                 break
 
-            #print(loss, acc)
             avg_acc.update(acc)
             print('acc: ', acc)
             break
-            iteration += 1 
-        
+            iteration += 1
+            
         # 모델 저장
         checkpoint_path = os.path.join(model_path, f'epoch{epoch}_acc_{avg_acc.avg:.3f}')
         torch.save({'model':model.state_dict(), 'optimizer':optimizer.state_dict()}, checkpoint_path)
@@ -145,10 +140,9 @@ def train():
     print(acc_list)
 
 
-# use the bag-of-words model to comput the uncertainty 
-# output: json image_id, caption, uncertainty 
+# 불확실성 계산 함수
 def uncertainty_estimation(max_samples=None, batch_size=16):
-    print("불확실성을 계산합니다...")
+    print("CLIP 없이 불확실성을 계산합니다...")
     path = 'model'
     ckpt_path = 'model/pytorch_model.bin'
     data_path = 'data'
@@ -161,7 +155,7 @@ def uncertainty_estimation(max_samples=None, batch_size=16):
     if not os.path.exists(data_path):
         os.makedirs(data_path)
         print(f"Created directory: {data_path}")
-    
+
     # 필요한 토크나이저 파일이 있는지 확인
     if not os.path.exists(os.path.join(path, 'vocab.txt')):
         print(f"Error: vocab.txt not found in {path}!")
@@ -178,7 +172,7 @@ def uncertainty_estimation(max_samples=None, batch_size=16):
         else:
             print("Cannot find vocab.txt in any folder. Please provide it.")
             return
-    
+            
     # 토크나이저 로드 시 직접 path를 사용하는 대신 이미 복사된 파일을 사용
     tokenizer = BertTokenizer(os.path.join(path, 'vocab.txt'), do_lower_case=True)
     
@@ -194,14 +188,14 @@ def uncertainty_estimation(max_samples=None, batch_size=16):
         print(f"Created default config.json in {path}")
     else:
         model_config = BertConfig.from_pretrained(path)
-    
+
     model = BagofWords(model_config)
 
     # 체크포인트 파일 확인
     if not os.path.exists(ckpt_path):
         print(f"Error: {ckpt_path} not found! Cannot proceed with uncertainty estimation.")
         return
-    
+        
     ckpt = torch.load(ckpt_path, map_location='cpu')
     model.load_state_dict(ckpt['model'])
     
@@ -226,7 +220,7 @@ def uncertainty_estimation(max_samples=None, batch_size=16):
     if not os.path.exists(train_caption_path):
         print(f"Error: {train_caption_path} not found! Please download annotations first.")
         return
-    
+        
     with open(train_caption_path, 'r', encoding='utf-8') as j:
         captions = json.load(j)
     
@@ -240,7 +234,17 @@ def uncertainty_estimation(max_samples=None, batch_size=16):
         print(f"총 {total_samples}개 샘플을 처리합니다")
     
     # tqdm을 사용하여 진행 상황 표시 개선
-    from tqdm import tqdm
+    try:
+        from tqdm import tqdm
+    except ImportError:
+        print("tqdm 패키지가 설치되어 있지 않습니다. 'pip install tqdm'으로 설치하세요.")
+        # tqdm이 없으면 간단한 진행률 표시 함수 정의
+        def tqdm(iterable, **kwargs):
+            total = len(iterable)
+            for i, item in enumerate(iterable):
+                if i % 10 == 0 or i == total - 1:
+                    print(f"Progress: {i+1}/{total} ({(i+1)/total*100:.1f}%)")
+                yield item
     
     # 결과 저장용
     annotation_list = []
@@ -300,32 +304,18 @@ def uncertainty_estimation(max_samples=None, batch_size=16):
 
 
 if __name__ == "__main__":
-    # 사용자 입력 받기
-    import argparse
-    parser = argparse.ArgumentParser(description='Bag-of-Words 모델 학습 및 불확실성 계산')
-    parser.add_argument('--train', action='store_true', help='BOW 모델 학습')
-    parser.add_argument('--uncertainty', action='store_true', help='불확실성 계산')
-    parser.add_argument('--max_samples', type=int, default=None, help='처리할 최대 샘플 수')
-    parser.add_argument('--batch_size', type=int, default=16, help='배치 크기')
+    # 사용자 선택
+    print("1. BOW 모델 학습")
+    print("2. 불확실성 계산")
+    print("3. 모두 실행")
+    choice = input("선택하세요 (1-3): ")
     
-    args = parser.parse_args()
-    
-    # 아무 옵션도 지정하지 않으면 둘 다 실행
-    if not (args.train or args.uncertainty):
-        args.train = True
-        args.uncertainty = True
-        
-    if args.train:
-        # 모델 학습
+    if choice == '1':
         train()
-        
-    if args.uncertainty:
-        # 불확실성 계산
-        uncertainty_estimation(max_samples=args.max_samples, batch_size=args.batch_size)
-        
-    # 옵션 처리가 끝난 후에도 코드가 계속 실행되도록
-    #s = 'a cat shsiss dog'
-    #s = tokenizer.tokenize(s)
-    # print(tokenizer.convert_tokens_to_ids(s))
-
-
+    elif choice == '2':
+        uncertainty_estimation()
+    elif choice == '3':
+        train()
+        uncertainty_estimation()
+    else:
+        print("잘못된 선택입니다.") 

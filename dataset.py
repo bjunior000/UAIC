@@ -13,10 +13,22 @@ class BagWordsDataset(Dataset):
 
     "output: image region, one-hot vocabulary vector"
     def __init__(self, data_path, tokenizer):
+        # 데이터 디렉토리 확인
+        if not os.path.exists(data_path):
+            os.makedirs(data_path)
+            print(f"Created directory: {data_path}")
+            
         self.img_features = h5py.File(os.path.join(data_path, 'coco_detections.hdf5'))
         # 'xxx_features', 'xxx_boxes', 'xxx_cls_prob'
         # print(self.h['999_features'].shape) (x, 2048)
         caption_path = os.path.join(data_path, 'annotations')
+        
+        # annotations 디렉토리 확인
+        if not os.path.exists(caption_path):
+            os.makedirs(caption_path)
+            print(f"Created directory: {caption_path}")
+            
+        # 대용량 특징 데이터 로드 최적화
         train_caption_path = os.path.join(caption_path, 'captions_train2014.json')
         with open(train_caption_path, 'r', encoding='utf-8') as j:
             self.captions = json.load(j) 
@@ -52,6 +64,11 @@ class UAICDataset(Dataset):
 
     "output: image region, input txt, output txt"
     def __init__(self, data_path, tokenizer):
+        # 데이터 디렉토리 확인
+        if not os.path.exists(data_path):
+            os.makedirs(data_path)
+            print(f"Created directory: {data_path}")
+            
         self.tokenizer = tokenizer 
         self.img_features = h5py.File(os.path.join(data_path, 'coco_detections.hdf5'))
         data_pair_path = os.path.join(data_path, 'data_pair.json')
