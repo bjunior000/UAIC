@@ -5,10 +5,22 @@ import os
 import subprocess
 import threading
 import tarfile
-from utils import download_from_url
+import requests
 
 METEOR_GZ_URL = 'http://aimagelab.ing.unimore.it/speaksee/data/meteor.tgz'
 METEOR_JAR = 'meteor-1.5.jar'
+
+def download_from_url(url, path):
+    """
+    Download a file from url to path
+    """
+    print(f"다운로드 중: {url}")
+    r = requests.get(url, stream=True)
+    with open(path, 'wb') as f:
+        for chunk in r.iter_content(chunk_size=1024):
+            if chunk:
+                f.write(chunk)
+    return path
 
 class Meteor:
     def __init__(self):
