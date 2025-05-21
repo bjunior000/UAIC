@@ -12,49 +12,69 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
 # generate candidates using inout image 
-def generate_cap(img_feature, model, tokenizer): 
-    bos, eos, none, img, txt = tokenizer.convert_tokens_to_ids(SPECIAL_TOKENS) 
-    input_txt = ['[bos]'] 
+def generate_cap(img_feature, model, tokenizer):
+    bos, eos, none, img, txt = tokenizer.convert_tokens_to_ids(SPECIAL_TOKENS)
+    input_txt = ['[bos]']
     output_ids = []
-    while True: 
-        if len(output_ids) > 0 and output_ids == [none] * len(output_ids): 
-            break 
-        input_txt = tokenizer.convert_tokens_to_ids(input_txt)
-        input_txt = torch.Tensor(input_txt).long().to(device)
-        input_embs = model.transformer.embeddings.word_embeddings(input_txt)
-        
+
+    step = 0
+    MAX_LEN = 512
+    while True:
+        if len(output_ids) > 0 and output_ids == [none] * len(output_ids):
+            break
+        if step >= MAX_LEN:
+            print("Warning: Reached max steps in generate_cap. Forcing exit.")
+            break
+        input_txt_ids = tokenizer.convert_tokens_to_ids(input_txt)
+        input_txt_tensor = torch.Tensor(input_txt_ids).long().to(device)
+        input_embs = model.transformer.embeddings.word_embeddings(input_txt_tensor)
+
         img_embs = model.image_ff(img_feature)
+
+        # (중요!) 512 초과 시 input_embs 자르기
+        total_len = img_embs.size(0) + input_embs.size(0)
+        if total_len > MAX_LEN:
+            excess = total_len - MAX_LEN
+            input_embs = input_embs[excess:]  # 뒤에서 자르기
+            input_txt_tensor = input_txt_tensor[excess:]  # 대응되는 토큰 ID도 잘라야 함
+
         input_embs = torch.cat([img_embs, input_embs], dim=0)
 
-        # print(input_txt.size())
-        token_type_ids = [img] * img_embs.size(0) + [txt] * input_txt.size(0)
+        token_type_ids = [img] * img_embs.size(0) + [txt] * input_txt_tensor.size(0)
         token_type_ids = torch.Tensor(token_type_ids).long()
-        
-        token_type_embs = model.transformer.embeddings.word_embeddings(token_type_ids)
-        
-        input_embs = input_embs + token_type_embs 
-        
-        out = model(input_embs.view(1, -1, 768)) 
-        out = out[0].squeeze(0)[-input_txt.size(0):,:]
-        
+
+        token_type_embs = model.transformer.embeddings.word_embeddings(token_type_ids.to(device))
+
+        input_embs = input_embs + token_type_embs
+
+        out = model(input_embs.view(1, -1, 768))
+        out = out[0].squeeze(0)[-input_txt_tensor.size(0):, :]
+
         output = torch.argmax(out, dim=1)
         output_ids = output.cpu().numpy().tolist()
         output_txt = tokenizer.convert_ids_to_tokens(output_ids)
         input_txt = sequence_stage_combine(input_txt, output_txt)
 
-    return input_txt 
+        step += 1
+
+    return input_txt
 
 
 # concatenate the substage to total sentence 
 def sequence_stage_combine(input_txt, output_txt):
     new_sequence = []
-    idx = 0
-    while idx < len(input_txt):
+    min_len = min(len(input_txt), len(output_txt))  # 길이 보정
+
+    for idx in range(min_len):
         new_sequence.append(input_txt[idx])
-        if output_txt[idx] !=  '[NONE]': 
+        if output_txt[idx] != '[NONE]':
             new_sequence.append(output_txt[idx])
-        idx += 1 
-    return new_sequence 
+
+    # 남은 input_txt가 있다면 그냥 추가
+    if len(input_txt) > min_len:
+        new_sequence.extend(input_txt[min_len:])
+
+    return new_sequence
 
 
 # evaluate the ckpt 
@@ -72,6 +92,7 @@ def eval():
     val_path = os.path.join(annotation_path, 'captions_val2014.json')
     val_data = json.load(open(val_path, 'r'))
     val_data = val_data['annotations']
+    val_data = val_data[:20]
     img_features = h5py.File(os.path.join(data_path, 'coco_detections.hdf5'))
     
     with torch.no_grad(): 
