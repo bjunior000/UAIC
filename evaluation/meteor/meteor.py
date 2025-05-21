@@ -5,7 +5,23 @@ import os
 import subprocess
 import threading
 import tarfile
-from utils import download_from_url
+import urllib.request
+import shutil
+
+# utils 모듈에서 불러오려던 함수를 직접 구현
+def download_from_url(url, dst):
+    """
+    @param: url to download file
+    @param: dst place to put the file
+    """
+    print(f"Downloading {url} to {dst}")
+    try:
+        with urllib.request.urlopen(url) as source, open(dst, 'wb') as output:
+            shutil.copyfileobj(source, output)
+        print(f"Download completed successfully")
+    except Exception as e:
+        print(f"Error during download: {e}")
+        raise e
 
 METEOR_GZ_URL = 'http://aimagelab.ing.unimore.it/speaksee/data/meteor.tgz'
 METEOR_JAR = 'meteor-1.5.jar'
