@@ -22,10 +22,10 @@ class BagofWords(BertPreTrainedModel):
 
     def acc_compute(self, output, labels):
         output = output * labels
-        thres = torch.tensor([[0.3]]).expand_as(output)
+        thres = torch.tensor([[0.3]], device=output.device).expand_as(output)
         summ = torch.ge(output, thres).sum().item()
         total = labels.sum().item()
-        return summ/total
+        return summ / total
 
     
     def forward(self, img_embs, labels=None):
@@ -53,12 +53,15 @@ def train():
     model_path = 'model'
     gradient_accumlation_steps = 5 
 
-    tokenizer = BertTokenizer('data/vocab.txt') 
-    # print(tokenizer.vocab.get('[UNK]'))
+    tokenizer = BertTokenizer('data/annotations/vocab.txt') 
+    print(tokenizer.vocab.get('[UNK]'))
     configuration = BertConfig(vocab_size=tokenizer.vocab.get('[UNK]') + 1, \
                                 num_hidden_layers=3, \
                                 intermediate_size=2048)
     model = BagofWords(configuration)
+    # check the torch is running on cpu or gpu
+    print('torch version: ', torch.__version__)
+    print(torch.cuda.is_available())
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = model.to(device)
     optimizer = AdamW(model.parameters(), lr=1e-4)
@@ -87,17 +90,17 @@ def train():
                 optimizer.zero_grad()
                 optimizer.step()
                 avg_loss.update(loss.item() / gradient_accumlation_steps)
-                break
+                # break
 
             #print(loss, acc)
             avg_acc.update(acc)
-            print('acc: ', acc)
-            break
+            # print('acc: ', acc)
+            # break
             iteration += 1 
         torch.save({'model':model.state_dict(), 'optimizer':optimizer.state_dict()},\
                     '%s/epoch%d_acc_%.3f'%(model_path, epoch, avg_acc.avg))
         model.config.to_json_file(os.path.join(model_path, 'config.json'))
-        # tokenizer.save_vocabulary(model_path)
+        tokenizer.save_vocabulary(model_path)
         break
         loss_list.append(avg_loss.avg)
         acc_list.append(avg_loss.avg)

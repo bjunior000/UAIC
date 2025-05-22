@@ -129,8 +129,8 @@ def tree_construct(uncertainty_list, left, right, res, level):
 
 
 if __name__ == "__main__":
-    # train_path = 'data/annotations'
-    # create_vocabulary(train_path)
+    train_path = 'data/annotations'
+    create_vocabulary(train_path)
 
-    data_path = 'data'
-    create_data_pair(data_path)
+    # data_path = 'data'
+    # create_data_pair(data_path)
