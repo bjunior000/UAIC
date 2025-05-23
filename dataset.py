@@ -89,7 +89,7 @@ if __name__ == "__main__":
     #data_set = BagWordsDataset(path, tokenizer)
     #img, label = data_set[0] 
     data_set = UAICDataset(path, tokenizer)
-    img, input, output = data_set[0]
+    img, input, output, token_type_ids = data_set[0]
     print(input)
     print(output)
 

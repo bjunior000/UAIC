@@ -22,21 +22,23 @@ class UAIC(BertPreTrainedModel):
     def forward(self, input_embs, labels=None):
         transformer_outputs = self.transformer(inputs_embeds=input_embs)
         hidden_states = transformer_outputs[0]
-
         lm_logits = self.lm_head(hidden_states)
         outputs = (lm_logits,) + transformer_outputs[1:]
-
         if labels is not None:
+            logits = lm_logits.squeeze(0)
+            if lm_logits.size(1) != labels.size(0):
+                min_len = min(lm_logits.size(1), labels.size(0))
+                lm_logits = lm_logits[:, :min_len, :]
+                labels = labels[:min_len]
             loss_fct = CrossEntropyLoss()
             loss = loss_fct(lm_logits.squeeze(0), labels)
             outputs = (loss,) + outputs
-        
-        return outputs 
+        return outputs
 
 
 if __name__ == "__main__":
     model_path = 'ckpt'
-    configration = BertConfig(vocab_size=10876)
+    configrtion = BertConfig(vocab_size=10876)
     model = UAIC(configration)
     torch.save(model.state_dict(), os.path.join(model_path, 'pytorch_model.bin'))
     model.config.to_json_file(os.path.join(model_path, 'config.json'))

@@ -12,7 +12,7 @@ def create_vocabulary(path, min_word_freq=5):
     with open(train_path, 'r') as j:
         data = json.load(j)
     # ['info', 'images', 'licenses', 'annotations']
-    # print(len(data['annotations']))
+    print(len(data['annotations']))
 
     word_freq = Counter()
     for ann in data['annotations']:
@@ -68,10 +68,12 @@ def create_data_pair(data_path):
         sample_uncertainty = sample['uncertainty'] 
         caption_uncertainty = sample['caption']
         order_list = [0] * len(sample_uncertainty)
+        # order_list는 각 word의 tree 상 level을 담는 리스트
         tree_construct(sample_uncertainty, 0, len(order_list)-1, order_list, 0)
-        # print(order_list)
+        print(order_list)
         max_iter = 0 
         for x in order_list:
+            # order_list의 값은 tree level이니 최대 level을 찾는다. - 그 만큼만 반복
             max_iter = max(x, max_iter)
         
         caption = caption_uncertainty.split()
@@ -100,7 +102,7 @@ def create_data_pair(data_path):
             tmp_sample['input'] = input_txt
             tmp_sample['output'] = output_txt
             data_pair_list.append(tmp_sample)
-        break
+        # break
     with open(os.path.join(data_path, 'data_pair.json'), 'w', encoding='utf-8') as f:
         json.dump(data_pair_list, f, indent=4)
 
@@ -129,8 +131,8 @@ def tree_construct(uncertainty_list, left, right, res, level):
 
 
 if __name__ == "__main__":
-    train_path = 'data/annotations'
-    create_vocabulary(train_path)
+    # train_path = 'data/annotations'
+    # create_vocabulary(train_path)
 
-    # data_path = 'data'
-    # create_data_pair(data_path)
+    data_path = 'data'
+    create_data_pair(data_path)

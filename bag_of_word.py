@@ -14,6 +14,7 @@ from torch.nn.functional import softmax
 class BagofWords(BertPreTrainedModel):
     def __init__(self, config):
         super(BagofWords, self).__init__(config)
+        # hidden size 768
         self.feature_embd = nn.Linear(2048, config.hidden_size)
         self.transformer = BertModel(config)
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
@@ -30,7 +31,7 @@ class BagofWords(BertPreTrainedModel):
     
     def forward(self, img_embs, labels=None):
         img_embs = self.feature_embd(img_embs)
-        # print(img_embs.size())
+        print(img_embs.size())
         transformer_outputs = self.transformer(inputs_embeds=img_embs)
         hidden_states = transformer_outputs[1]
         pool_outputs = self.dropout(hidden_states)
@@ -77,8 +78,8 @@ def train():
         avg_acc = AverageMeter()
         iteration = 1 
         for img, label in dataset:
-            #print(img.size())
-            #print(label.size())
+            print(img.size())
+            print(label.size())
             img = img.unsqueeze(0).to(device)
             label = label.unsqueeze(0).to(device)
             loss, acc = model(img, label)
@@ -90,17 +91,17 @@ def train():
                 optimizer.zero_grad()
                 optimizer.step()
                 avg_loss.update(loss.item() / gradient_accumlation_steps)
-                # break
+                break
 
             #print(loss, acc)
             avg_acc.update(acc)
-            # print('acc: ', acc)
+            print('acc: ', acc)
             # break
             iteration += 1 
         torch.save({'model':model.state_dict(), 'optimizer':optimizer.state_dict()},\
                     '%s/epoch%d_acc_%.3f'%(model_path, epoch, avg_acc.avg))
         model.config.to_json_file(os.path.join(model_path, 'config.json'))
-        tokenizer.save_vocabulary(model_path)
+        # tokenizer.save_vocabulary(model_path)
         break
         loss_list.append(avg_loss.avg)
         acc_list.append(avg_loss.avg)
@@ -135,13 +136,17 @@ def uncertainty_estimation():
         captions = json.load(j)
     annotation_list = []
     i = 1
-    for sample in captions['annotations']:
+    print(len(captions['annotations']))
+    # 모든 캡션을 처리하는 대신 일부만 처리
+    for sample in captions['annotations'][:1000]:
         img_id = str(sample['image_id']) + '_features'
         caption = tokenizer.convert_tokens_to_ids(tokenizer.tokenize(sample['caption']))
 
         input_f = torch.FloatTensor(img_features[img_id]).view(1,-1, 2048)
+        print(input_f.size())
+        # do forward pass
         pro_vocab = model(img_embs = input_f).view(-1)
-        # print(softmax(pro_vocab, 1))
+        print(pro_vocab.size())
         uncertainty = []
         for word_idx in caption:
             if word_idx == unk:
@@ -150,7 +155,8 @@ def uncertainty_estimation():
                 uncertainty.append(pro_vocab[word_idx].item())
         sample['uncertainty'] = uncertainty
         annotation_list.append(sample)
-        print(i)
+        if(i % 1000 == 0):
+            print("total length: ", len(captions['annotations']), "current length: ", i)
         i += 1
         # print(annotation_list)
         # break

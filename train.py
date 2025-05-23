@@ -14,7 +14,8 @@ def train():
     data_path = 'data'
     # ckpt_path = 'ckpt'
     lr = 1e-4
-    epochs = 15 
+    # epochs = 15 
+    epochs = 1
     gradient_accumulation_steps = 5 
 
     tokenizer = BertTokenizer.from_pretrained(model_path)
@@ -28,17 +29,19 @@ def train():
     optimizer = AdamW(model.parameters(), lr=lr)
 
     model.train()
-    
     train_data = UAICDataset(data_path, tokenizer)
+    print("total train data length: ", len(train_data))
     # bos, eos, none, img_label, txt_label = tokenizer.convert_tokens_to_ids(SPECIAL_TOKENS[:-1])
     for epoch in range(epochs):
         
         iteration = 1
         for img, input_txt, output, token_type_ids in train_data:
-            # print(input.size(), output.size(), img.size()) 
+            # for debug
+            # print(img.size(), input_txt.size(), output.size(), token_type_ids.size()) 
             img = img.to(device)
             input_txt = input_txt.to(device)
             output = output.to(device)
+            token_type_ids = token_type_ids.to(device)
 
             input_embs = model.transformer.embeddings.word_embeddings(input_txt)
             img_embs = model.image_ff(img)
@@ -54,7 +57,7 @@ def train():
                 optimizer.step()
                 optimizer.zero_grad()
             
-            print(loss.item())
+            # print(loss.item())
             iteration += 1
             
 
