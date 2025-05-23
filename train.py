@@ -7,7 +7,7 @@ from model import UAIC
 from dataset import UAICDataset 
 
 SPECIAL_TOKENS_DICT = {'bos_token': "[BOS]", 'eos_token': "[EOS]", 'additional_special_tokens': ["[NONE]", "[IMG]", "[TXT]"], 'pad_token': "[PAD]"}
-SPECIAL_TOKENS = ["[BOS]", "[EOS]", "[NONE]" "[IMG]", "[TXT]", "[PAD]"]
+SPECIAL_TOKENS = ["[BOS]", "[EOS]", "[NONE]", "[IMG]", "[TXT]", "[PAD]"]
 
 def train():
     model_path = 'ckpt'
