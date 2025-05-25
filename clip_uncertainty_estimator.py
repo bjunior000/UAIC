@@ -7,6 +7,9 @@ import json
 import os
 import tqdm
 import h5py
+import nltk
+from nltk.tokenize import word_tokenize
+import re
 
 class CLIPUncertaintyEstimator(nn.Module):
     def __init__(self):
@@ -38,6 +41,53 @@ class CLIPUncertaintyEstimator(nn.Module):
         uncertainty = 1 - confidence
         
         return uncertainty, similarity
+    
+    def estimate_word_uncertainty(self, image_features, caption):
+        """단어별 불확실성 값을 계산"""
+        # NLTK 대신 간단한 문자열 분할 사용
+        # 구두점 제거 및 소문자 변환
+        clean_caption = re.sub(r'[^\w\s]', ' ', caption.lower())
+        # 공백으로 분리하고 빈 문자열 제거
+        words = [word for word in clean_caption.split() if word]
+        word_uncertainties = []
+        
+        # 이미지 특징 정규화
+        if isinstance(image_features, torch.Tensor):
+            image_features = image_features / image_features.norm(dim=-1, keepdim=True)
+        
+        # 각 단어별로 CLIP을 사용해 이미지와의 유사도 계산
+        for word in words:
+            if len(word.strip()) == 0:
+                continue
+                
+            with torch.no_grad():
+                text = clip.tokenize([word]).to(self.device)
+                text_features = self.clip_model.encode_text(text)
+                text_features = text_features.float()
+                text_features = text_features / text_features.norm(dim=-1, keepdim=True)
+                
+                # 유사도 계산
+                if isinstance(image_features, torch.Tensor):
+                    similarity = 100.0 * (image_features @ text_features.T)
+                    
+                    # 텐서 차원 처리: 다차원 텐서의 경우 평균 사용
+                    if similarity.numel() > 1:  # 요소가 여러 개인 경우
+                        similarity_value = similarity.mean().item()
+                    else:
+                        similarity_value = similarity.item()
+                    
+                    confidence = torch.sigmoid(torch.tensor(similarity_value))  # 단일 값으로 변환
+                    confidence_value = confidence.item()
+                else:
+                    # image_features가 텐서가 아닌 경우 기본값 사용
+                    confidence_value = 0.5
+                    
+                uncertainty = 1.0 - confidence_value
+                # 0~1 사이의 의미 있는 값으로 변환
+                scaled_uncertainty = max(0.01, min(0.99, uncertainty))
+                word_uncertainties.append(scaled_uncertainty)
+        
+        return words, word_uncertainties
 
 def check_paths():
     """
@@ -95,19 +145,27 @@ def estimate_clip_uncertainty():
             image = Image.open(image_path).convert("RGB")
             image_input = uncertainty_model.preprocess(image).unsqueeze(0).to(device)
             
-            # 텍스트 토큰화
-            text_input = clip.tokenize([caption]).to(device)
+            # 이미지 특징 추출
+            with torch.no_grad():
+                image_features = uncertainty_model.clip_model.encode_image(image_input)
+                image_features = image_features.float()
+                image_features = image_features / image_features.norm(dim=-1, keepdim=True)
             
-            # 불확실성 계산
-            uncertainty, similarity = uncertainty_model(image_input, text_input)
+            # 단어별 불확실성 계산
+            words, word_uncertainties = uncertainty_model.estimate_word_uncertainty(image_features, caption)
             
-            # 결과 저장
-            sample['clip_uncertainty'] = uncertainty.item()
-            sample['clip_similarity'] = similarity.item()
+            # bag-of-word와 동일한 형식으로 저장
+            sample['uncertainty'] = word_uncertainties
+            
+            # 추가 정보 저장 (선택 사항)
+            sample['clip_words'] = words
+            
             annotation_list.append(sample)
             
             if i % 100 == 0:
                 print(f"Processed {i} samples")
+                print(f"단어: {words}")
+                print(f"불확실성: {word_uncertainties}")
         except Exception as e:
             print(f"Error processing image {img_id}: {e}")
     
@@ -124,7 +182,7 @@ def estimate_clip_uncertainty_with_features():
     기존 Bag-of-Words가 사용하는 특징 벡터를 활용하여 CLIP 기반 불확실성 예측을 수행합니다.
     """
     data_path = 'data'
-    output_path = os.path.join(data_path, 'clip_uncertainty_features_captions.json')
+    output_path = os.path.join(data_path, 'clip_uncertainty_captions.json')  # bag-of-word와 동일한 파일명 사용
     
     # CLIP 모델 초기화
     uncertainty_model = CLIPUncertaintyEstimator()
@@ -153,11 +211,6 @@ def estimate_clip_uncertainty_with_features():
             # 기존 특징 로드
             image_feature = torch.FloatTensor(img_features[feature_id]).to(device)
             
-            # 텍스트 토큰화
-            text_input = clip.tokenize([caption]).to(device)
-            text_features = uncertainty_model.clip_model.encode_text(text_input)
-            text_features = text_features / text_features.norm(dim=-1, keepdim=True)
-            
             # 특징 벡터 형태 조정 및 정규화 (2048 -> 512)
             if image_feature.dim() > 2:
                 image_feature = image_feature.mean(dim=1)  # 공간 차원 평균화
@@ -167,23 +220,24 @@ def estimate_clip_uncertainty_with_features():
             if not hasattr(uncertainty_model, 'feature_adapter'):
                 uncertainty_model.feature_adapter = nn.Linear(feature_dim, 512).to(device)
             
-            adapted_features = uncertainty_model.feature_adapter(image_feature)
+            adapted_features = uncertainty_model.feature_adapter(image_feature).float()  # 명시적으로 float32로 지정
             adapted_features = adapted_features / adapted_features.norm(dim=-1, keepdim=True)
             
-            # 유사도 계산
-            similarity = 100.0 * torch.matmul(adapted_features, text_features.T)
+            # 단어별 불확실성 계산
+            words, word_uncertainties = uncertainty_model.estimate_word_uncertainty(adapted_features, caption)
             
-            # 불확실성 계산
-            confidence = F.softmax(similarity, dim=-1)
-            uncertainty = 1 - confidence
+            # bag-of-word와 동일한 형식으로 저장
+            sample['uncertainty'] = word_uncertainties
             
-            # 결과 저장
-            sample['clip_uncertainty'] = uncertainty.item()
-            sample['clip_similarity'] = similarity.item()
+            # 추가 정보 저장 (선택 사항)
+            # sample['clip_words'] = words
+            
             annotation_list.append(sample)
             
             if i % 100 == 0:
                 print(f"Processed {i} samples")
+                print(f"단어: {words}")
+                print(f"불확실성: {word_uncertainties}")
         except Exception as e:
             print(f"Error processing image {img_id}: {e}")
             

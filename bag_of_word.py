@@ -116,6 +116,7 @@ def uncertainty_estimation():
 
     path = 'model'
     ckpt_path = 'model/pytorch_model.bin'
+    # ckpt_path = 'model/pytorch_spm_bow.bin'
     data_path = 'data'
 
     
